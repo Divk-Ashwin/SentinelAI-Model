@@ -1,0 +1,38 @@
+# Core Framework
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+pydantic==2.5.3
+
+# ML & Deep Learning
+torch==2.1.2
+torchvision==0.16.2
+transformers==4.36.2
+scikit-learn==1.4.0
+numpy==1.26.3
+pandas==2.1.4
+
+# Image Processing
+pillow==10.2.0
+opencv-python==4.9.0.80
+pytesseract==0.3.10
+
+# NLP & Text Processing
+nltk==3.8.1
+sentencepiece==0.1.99
+
+# URL & Metadata Analysis
+tldextract==5.1.1
+urllib3==2.1.0
+
+# API & Utilities
+python-multipart==0.0.6
+aiofiles==23.2.1
+python-jose[cryptography]==3.3.0
+python-dotenv==1.0.0
+
+# Logging & Monitoring
+loguru==0.7.2
+
+# Testing
+pytest==7.4.4
+httpx==0.26.0
