@@ -386,6 +386,16 @@ def main():
         if val_metrics['f1'] > best_val_f1:
             best_val_f1 = val_metrics['f1']
             best_epoch = epoch + 1
+        
+        # Save model after every epoch
+        logger.info(f"Saving model for epoch {epoch + 1}...")
+        epoch_model_path = SAVE_MODEL_PATH.replace('.pth', f'_epoch_{epoch + 1}.pth')
+        torch.save(model.state_dict(), epoch_model_path)
+        logger.info(f"Model saved to {epoch_model_path}")
+        
+        # Also save the latest model without epoch number
+        torch.save(model.state_dict(), SAVE_MODEL_PATH)
+        logger.info(f"Latest model saved to {SAVE_MODEL_PATH}")
 
     # Final validation metrics
     logger.info("=" * 70)
@@ -399,11 +409,6 @@ def main():
 
     cm = confusion_matrix(val_metrics['labels'], val_metrics['predictions'])
     logger.info(f"Confusion Matrix - TP: {cm[1, 1]}, TN: {cm[0, 0]}, FP: {cm[0, 1]}, FN: {cm[1, 0]}")
-
-    # Save model
-    logger.info("Saving model...")
-    torch.save(model.state_dict(), SAVE_MODEL_PATH)
-    logger.info(f"Model saved to {SAVE_MODEL_PATH}")
 
     # Run sanity checks
     if not sanity_check_image_model():

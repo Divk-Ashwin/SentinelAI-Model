@@ -5,7 +5,7 @@ Multi-modal Phishing Detection System
 import sys
 from pathlib import Path
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 import traceback
 
 from fastapi import FastAPI, HTTPException, status
@@ -24,9 +24,10 @@ from config import (
     IMAGE_MODEL_PATH,
     METADATA_MODEL_PATH,
     TEXT_TOKENIZER_PATH,
-    DEFAULT_SCORES,
     LOG_LEVEL,
-    LOG_FORMAT
+    LOG_FORMAT,
+    LLM_CONFIG,
+    JUSTIFY_SYSTEM_PROMPT
 )
 
 from app.models import (
@@ -34,15 +35,19 @@ from app.models import (
     PredictionResponse,
     HealthResponse,
     ErrorResponse,
-    ModelScores,
-    SpamIndicators
+    PipelineScores,
+    Explainability,
+    FusionWeightsUsed,
+    ContributingWord,
+    ContributingFeature,
+    JustifyRequest,
+    JustifyResponse
 )
 
 from models.text_pipeline import TextPipeline
 from models.image_pipeline import ImagePipeline
 from models.metadata_pipeline import MetadataPipeline
 from fusion.decision_fusion import DecisionFusion
-from utils.preprocessing import decode_base64_image, generate_explanation
 
 # Configure logging
 logger.remove()
@@ -89,12 +94,10 @@ async def startup_event():
         )
         logger.success("✓ Text model loaded")
         
-        # Initialize image pipeline
-        logger.info("Loading image model...")
-        image_pipeline = ImagePipeline(
-            model_path=IMAGE_MODEL_PATH if IMAGE_MODEL_PATH.exists() else None
-        )
-        logger.success("✓ Image model loaded")
+        # Initialize image pipeline (OCR-based, no model needed)
+        logger.info("Loading image pipeline...")
+        image_pipeline = ImagePipeline(text_pipeline=text_pipeline)
+        logger.success("✓ Image pipeline loaded")
         
         # Initialize metadata pipeline
         logger.info("Loading metadata model...")
@@ -164,133 +167,151 @@ async def health_check():
 )
 async def predict(request: PredictionRequest):
     """
-    Multi-modal phishing detection endpoint
-    
-    Analyzes SMS text, image, and metadata to detect phishing attempts.
-    Returns classification label, confidence score, and explanation.
+    Multi-modal phishing detection endpoint.
+
+    Analyzes SMS text, image (OCR), and metadata to detect phishing attempts.
+    Returns final score, decision, confidence level, and explainability info.
+
+    Missing modalities are excluded from fusion (not defaulted to 0.5).
+    Weights are dynamically redistributed among available modalities.
     """
     try:
         logger.info("📨 New prediction request received")
-        
+
         # Validate that at least one modality is provided
         if not any([request.text, request.image, request.metadata]):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="At least one of text, image, or metadata must be provided"
             )
-        
-        # Initialize scores with defaults
-        text_score = DEFAULT_SCORES["text"]
-        image_score = DEFAULT_SCORES["image"]
-        metadata_score = DEFAULT_SCORES["metadata"]
-        
-        # Initialize spam indicators
-        spam_indicators = SpamIndicators()
-        
+
+        # Initialize scores as None (will remain None if modality not provided)
+        text_score: Optional[float] = None
+        metadata_score: Optional[float] = None
+        image_score: Optional[float] = None
+        url_text_score: Optional[float] = None
+
+        # Initialize explainability components
+        contributing_words: List[ContributingWord] = []
+        contributing_features: List[ContributingFeature] = []
+        ocr_extracted_text: Optional[str] = None
+
         # ==================== PIPELINE 1: TEXT ANALYSIS ====================
         if request.text and text_pipeline:
             logger.info("🔤 PIPELINE 1: Analyzing text...")
             try:
-                text_score, text_keywords, text_explanation = text_pipeline.predict_with_keywords(request.text)
-                spam_indicators.text_keywords = text_keywords
-                spam_indicators.text_explanation = text_explanation
+                text_result = text_pipeline.predict_with_explanation(request.text)
+                text_score = text_result.score
+
+                # Extract contributing words with scores
+                contributing_words = [
+                    ContributingWord(word=tc.word, score=tc.score)
+                    for tc in text_result.contributing_words
+                ]
+
                 logger.info(f"Text score: {text_score:.4f}")
-                if text_keywords:
-                    logger.info(f"Detected keywords: {text_keywords}")
+                if contributing_words:
+                    logger.info(f"Top tokens: {[w.word for w in contributing_words[:3]]}")
             except Exception as e:
                 logger.warning(f"Text analysis error: {e}")
-                spam_indicators.text_explanation = "Text analysis error"
-        
-        # ==================== PIPELINE 2: IMAGE ANALYSIS ====================
+
+        # ==================== PIPELINE 2: IMAGE ANALYSIS (OCR) ====================
         if request.image and image_pipeline:
-            logger.info("🖼️  PIPELINE 2: Analyzing image...")
+            logger.info("🖼️  PIPELINE 2: Analyzing image (OCR)...")
             try:
-                # Decode base64 image
-                image = decode_base64_image(request.image)
-                image_score, extracted_text, image_keywords, image_explanation = image_pipeline.predict_with_ocr(image)
-                spam_indicators.extracted_text = extracted_text
-                spam_indicators.image_keywords = image_keywords
-                spam_indicators.image_explanation = image_explanation
-                logger.info(f"Image score: {image_score:.4f}")
-                if extracted_text:
-                    logger.info(f"Extracted text from image: {extracted_text[:50]}...")
-                if image_keywords:
-                    logger.info(f"Image keywords: {image_keywords}")
+                image_result = image_pipeline.analyze(request.image)
+                image_score = image_result.score  # None if OCR failed or text too short
+                ocr_extracted_text = image_result.ocr_text
+
+                if image_score is not None:
+                    logger.info(f"Image score: {image_score:.4f}")
+                else:
+                    logger.info(f"Image: {image_result.explanation}")
+                if ocr_extracted_text:
+                    logger.info(f"OCR text: {ocr_extracted_text[:50]}...")
             except Exception as e:
                 logger.warning(f"Image processing failed: {e}")
-                spam_indicators.image_explanation = f"Image processing error: {str(e)}"
-        
+
         # ==================== PIPELINE 3: METADATA ANALYSIS ====================
         if request.metadata and metadata_pipeline:
             logger.info("📊 PIPELINE 3: Analyzing metadata...")
             try:
-                metadata_score, suspicious_features, metadata_explanation = metadata_pipeline.predict_with_indicators(
+                metadata_result = metadata_pipeline.predict_with_explanation(
                     url=request.metadata.url,
                     sender=request.metadata.sender,
+                    timestamp=request.metadata.timestamp,
                     time=request.metadata.time,
                     date=request.metadata.date,
-                    mobile_number=request.metadata.mobile_number,
-                    timestamp=request.metadata.timestamp
+                    mobile_number=request.metadata.mobile_number
                 )
-                spam_indicators.suspicious_features = suspicious_features
-                spam_indicators.metadata_explanation = metadata_explanation
-                logger.info(f"Metadata score: {metadata_score:.4f}")
-                if suspicious_features:
-                    logger.info(f"Suspicious features: {suspicious_features}")
+
+                # metadata_result will be None if no URL provided
+                if metadata_result is not None:
+                    metadata_score = metadata_result.score
+                    url_text_score = metadata_result.url_text_score
+
+                    # Extract contributing features with scores
+                    contributing_features = [
+                        ContributingFeature(feature=fc.feature, score=fc.score)
+                        for fc in metadata_result.contributing_features
+                    ]
+
+                    logger.info(f"Metadata score: {metadata_score:.4f}")
+                    if url_text_score is not None:
+                        logger.info(f"URL text risk score: {url_text_score:.4f}")
+                    if contributing_features:
+                        logger.info(f"Top features: {[f.feature for f in contributing_features[:3]]}")
+                else:
+                    logger.info("Metadata: No URL provided, skipping metadata analysis")
             except Exception as e:
                 logger.warning(f"Metadata analysis error: {e}")
-                spam_indicators.metadata_explanation = f"Metadata analysis error: {str(e)}"
-        
+
         # ==================== DECISION FUSION ====================
         logger.info("🔀 Performing decision fusion...")
-        label, confidence, scores = fusion_module.fuse(
+
+        # Fusion with None for missing modalities (dynamic weight redistribution)
+        fusion_result = fusion_module.fuse(
             text_score=text_score,
             metadata_score=metadata_score,
-            image_score=image_score
+            image_score=image_score,
+            url_text_score=url_text_score
         )
-        
-        # Generate recommendation
-        if label == "SPAM":
-            if confidence > 0.9:
-                recommendation = "Block - Very high confidence phishing attempt"
-            elif confidence > 0.7:
-                recommendation = "Block - High confidence phishing attempt"
-            else:
-                recommendation = "Warn user - Suspected phishing, requires review"
-        else:
-            if confidence > 0.9:
-                recommendation = "Allow - Very high confidence legitimate message"
-            else:
-                recommendation = "Allow - Likely legitimate message"
-        
-        # Generate detailed reason
-        reason_parts = []
-        if spam_indicators.text_keywords:
-            reason_parts.append(f"Text: {', '.join(spam_indicators.text_keywords[:3])}")
-        if spam_indicators.suspicious_features:
-            feature_names = list(spam_indicators.suspicious_features.keys())[:3]
-            reason_parts.append(f"Metadata: {', '.join(feature_names)}")
-        if spam_indicators.image_keywords:
-            reason_parts.append(f"Image: {', '.join(spam_indicators.image_keywords[:2])}")
-        
-        reason = " | ".join(reason_parts) if reason_parts else "Multiple weak signals combined"
-        
-        logger.success(f"✅ Prediction: {label} (confidence: {confidence:.4f})")
-        logger.success(f"Recommendation: {recommendation}")
-        logger.info(f"Reason: {reason}")
-        
-        # Prepare response with detailed spam indicators
+
+        # Extract fusion weights (0.0 for modalities not used)
+        weights_used = {
+            "text": fusion_result.weights_applied.get("text", 0.0),
+            "metadata": fusion_result.weights_applied.get("metadata", 0.0),
+            "image": fusion_result.weights_applied.get("image", 0.0)
+        }
+
+        logger.success(f"✅ Decision: {fusion_result.label} (score: {fusion_result.score:.4f}, confidence: {fusion_result.confidence.value})")
+        logger.info(f"Modalities used: {fusion_result.modalities_used}")
+        logger.info(f"Weights applied: {weights_used}")
+
+        # Build response
         response = PredictionResponse(
-            label=label,
-            confidence=confidence,
-            scores=ModelScores(**scores),
-            spam_indicators=spam_indicators,
-            reason=reason,
-            recommendation=recommendation
+            final_score=fusion_result.score,
+            decision=fusion_result.label,
+            confidence=fusion_result.confidence.value,
+            pipeline_scores=PipelineScores(
+                text_score=text_score,
+                metadata_score=metadata_score,
+                image_score=image_score
+            ),
+            explainability=Explainability(
+                contributing_words=contributing_words,
+                contributing_features=contributing_features,
+                ocr_extracted_text=ocr_extracted_text
+            ),
+            fusion_weights_used=FusionWeightsUsed(
+                text=weights_used["text"],
+                metadata=weights_used["metadata"],
+                image=weights_used["image"]
+            )
         )
-        
+
         return response
-    
+
     except HTTPException:
         raise
     except Exception as e:
@@ -300,6 +321,194 @@ async def predict(request: PredictionRequest):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Internal server error: {str(e)}"
         )
+
+
+def build_justify_user_prompt(request: JustifyRequest) -> str:
+    """
+    Build user prompt from prediction JSON for LLM justification.
+
+    Extracts key information: final_score, decision, contributing_words,
+    contributing_features, and ocr_extracted_text.
+    """
+    parts = []
+
+    # Decision summary
+    parts.append(f"Detection Result: {request.decision} (confidence: {request.confidence})")
+    parts.append(f"Risk Score: {request.final_score:.2f} out of 1.0")
+
+    # Contributing words from text analysis
+    if request.explainability.contributing_words:
+        words = [f"'{w.word}' (importance: {w.score:.2f})"
+                 for w in request.explainability.contributing_words[:5]]
+        parts.append(f"Suspicious words detected: {', '.join(words)}")
+
+    # Contributing features from metadata analysis
+    if request.explainability.contributing_features:
+        features = [f"{f.feature} (importance: {f.score:.2f})"
+                    for f in request.explainability.contributing_features[:5]]
+        parts.append(f"Suspicious metadata patterns: {', '.join(features)}")
+
+    # OCR extracted text from image
+    if request.explainability.ocr_extracted_text:
+        ocr_text = request.explainability.ocr_extracted_text
+        if len(ocr_text) > 200:
+            ocr_text = ocr_text[:200] + "..."
+        parts.append(f"Text extracted from image: \"{ocr_text}\"")
+
+    # Pipeline scores context
+    scores_info = []
+    if request.pipeline_scores.text_score is not None:
+        scores_info.append(f"text={request.pipeline_scores.text_score:.2f}")
+    if request.pipeline_scores.metadata_score is not None:
+        scores_info.append(f"metadata={request.pipeline_scores.metadata_score:.2f}")
+    if request.pipeline_scores.image_score is not None:
+        scores_info.append(f"image={request.pipeline_scores.image_score:.2f}")
+    if scores_info:
+        parts.append(f"Individual pipeline scores: {', '.join(scores_info)}")
+
+    return "\n".join(parts)
+
+
+async def call_groq_api(system_prompt: str, user_prompt: str) -> str:
+    """
+    Call Groq API for justification generation.
+
+    Uses Llama 3 8B model via Groq's OpenAI-compatible endpoint.
+    Includes fallback logic if API call fails.
+    """
+    import httpx
+
+    api_key = LLM_CONFIG["groq_api_key"]
+    api_url = LLM_CONFIG["groq_api_url"]
+    model = LLM_CONFIG["groq_model"]
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                api_url,
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": model,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    "max_tokens": LLM_CONFIG["max_tokens"],
+                    "temperature": LLM_CONFIG["temperature"]
+                }
+            )
+            response.raise_for_status()
+            data = response.json()
+            return data["choices"][0]["message"]["content"].strip()
+
+    except Exception as e:
+        logger.warning(f"Groq API call failed: {e}")
+        # Return None to trigger fallback in generate_justification
+        return None
+
+
+def get_fallback_justification(decision: str, score: float) -> str:
+    """
+    Generate a fallback justification when LLM API fails.
+
+    Args:
+        decision: "SPAM" or "HAM"
+        score: The final risk score
+
+    Returns:
+        A hardcoded but contextual justification string
+    """
+    if decision == "SPAM":
+        if score > 0.8:
+            return "This message was flagged as highly suspicious. It contains multiple indicators commonly associated with phishing attempts, such as urgent language, suspicious links, or unusual sender patterns. We recommend not clicking any links and deleting this message."
+        elif score > 0.6:
+            return "This message shows several warning signs of a potential phishing attempt. The combination of suspicious keywords and metadata patterns triggered our detection system. Exercise caution before taking any action."
+        else:
+            return "This message has been flagged as potentially suspicious. While the risk is moderate, we recommend verifying the sender through official channels before responding or clicking any links."
+    else:
+        if score < 0.3:
+            return "This message appears to be legitimate. Our analysis found no significant indicators of phishing or spam. The sender and content patterns match expected communication norms."
+        else:
+            return "This message appears to be safe, though it contains some patterns that occasionally appear in spam. The overall risk is low, but always verify unexpected requests through official channels."
+
+
+async def generate_justification(system_prompt: str, user_prompt: str, decision: str = "SPAM", score: float = 0.5) -> str:
+    """
+    Generate justification using Groq API with fallback.
+
+    Args:
+        system_prompt: The system prompt for the LLM
+        user_prompt: The user prompt with detection details
+        decision: The detection decision for fallback
+        score: The final score for fallback
+
+    Returns:
+        LLM-generated justification or fallback string
+    """
+    # Try Groq API
+    result = await call_groq_api(system_prompt, user_prompt)
+
+    if result:
+        return result
+
+    # Fallback if API fails
+    logger.warning("Using fallback justification due to API failure")
+    return get_fallback_justification(decision, score)
+
+
+@app.post(
+    "/justify",
+    response_model=JustifyResponse,
+    responses={
+        200: {"model": JustifyResponse},
+        400: {"model": ErrorResponse},
+        500: {"model": ErrorResponse}
+    },
+    tags=["Justification"]
+)
+async def justify(request: JustifyRequest):
+    """
+    Generate human-readable justification for a phishing detection result.
+
+    Accepts the full JSON output from /predict and uses Groq's Llama 3 model
+    to generate a clear 2-3 sentence explanation for non-technical users.
+
+    If the Groq API fails, returns a contextual fallback justification.
+    """
+    try:
+        logger.info("📝 Justification request received")
+        logger.info(f"Decision: {request.decision}, Score: {request.final_score:.4f}")
+
+        # Build prompts
+        system_prompt = JUSTIFY_SYSTEM_PROMPT
+        user_prompt = build_justify_user_prompt(request)
+
+        logger.debug(f"User prompt:\n{user_prompt}")
+
+        # Call Groq API (with fallback)
+        logger.info("Calling Groq API for justification...")
+
+        justification = await generate_justification(
+            system_prompt,
+            user_prompt,
+            decision=request.decision,
+            score=request.final_score
+        )
+
+        logger.success(f"✅ Justification generated ({len(justification)} chars)")
+        logger.debug(f"Justification: {justification}")
+
+        return JustifyResponse(justification=justification)
+
+    except Exception as e:
+        logger.error(f"❌ Justification error: {e}")
+        logger.error(traceback.format_exc())
+        # Even if everything fails, return a generic fallback
+        fallback = get_fallback_justification(request.decision, request.final_score)
+        return JustifyResponse(justification=fallback)
 
 
 @app.exception_handler(HTTPException)

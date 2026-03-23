@@ -43,17 +43,25 @@ METADATA_MODEL_CONFIG = {
     "dropout": 0.3
 }
 
-# Fusion weights
+# Fusion weights (base weights - will be redistributed if modalities missing)
 FUSION_WEIGHTS = {
-    "text": 0.5,
-    "metadata": 0.3,
-    "image": 0.2
+    "text": 0.45,
+    "metadata": 0.40,
+    "image": 0.15
 }
 
-# Decision threshold
-SPAM_THRESHOLD = 0.6
+# Decision threshold (configurable)
+SPAM_THRESHOLD = 0.50  # Lowered threshold to catch more suspicious messages
 
-# Default scores (when modality is missing)
+# Confidence thresholds for fusion output
+CONFIDENCE_THRESHOLDS = {
+    "high_upper": 0.75,   # Score > 0.75 = HIGH confidence spam
+    "high_lower": 0.25,   # Score < 0.25 = HIGH confidence ham
+    "medium_upper": 0.60, # Score 0.40-0.75 or 0.25-0.40 = MEDIUM
+    "medium_lower": 0.40,
+}
+
+# Default scores - DEPRECATED (missing modalities now excluded from fusion)
 DEFAULT_SCORES = {
     "text": 0.5,
     "image": 0.5,
@@ -66,12 +74,14 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Training hyperparameters
 TRAINING_CONFIG = {
-    "epochs": 3,
-    "batch_size": 16,
-    "learning_rate": 2e-5,
+    "epochs": 20,
+    "batch_size": 8,
+    "learning_rate": 3e-5,
     "max_sequence_length": 128,
     "validation_split": 0.2,
-    "random_seed": 42
+    "random_seed": 42,
+    "warmup_steps": 100,
+    "early_stopping_patience": 4
 }
 
 # Feature extraction settings
@@ -113,3 +123,20 @@ SUSPICIOUS_TLDS = [
 # Logging
 LOG_LEVEL = "INFO"
 LOG_FORMAT = "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan> - <level>{message}</level>"
+
+# LLM Configuration for /justify endpoint (Groq API)
+LLM_CONFIG = {
+    "provider": "groq",
+    "groq_api_key": os.getenv("GROQ_API_KEY"),  # Set in .env file
+    "groq_model": "llama-3.1-8b-instant",
+    "groq_api_url": "https://api.groq.com/openai/v1/chat/completions",
+    "max_tokens": 150,
+    "temperature": 0.3,
+}
+
+# System prompt for justification generation
+JUSTIFY_SYSTEM_PROMPT = """You are a cybersecurity assistant. Based on the phishing detection analysis provided, give a clear 2-3 sentence explanation to a non-technical user about why this message was flagged or cleared. Mention specific words or URL patterns that were suspicious. Be factual, not alarmist. Respond in plain English only. IMPORTANT: Only mention URLs, words, or features 
+that are explicitly listed in the analysis data.Never invent or assume URLs, keywords, or sender 
+names that are not provided. If contributing_words 
+is empty, say 'our text analysis flagged suspicious 
+patterns' without mentioning specific words."""

@@ -456,6 +456,22 @@ def main():
         if val_metrics['f1'] > best_val_f1:
             best_val_f1 = val_metrics['f1']
             best_epoch = epoch + 1
+        
+        # Save model after every epoch
+        logger.info(f"Saving model for epoch {epoch + 1}...")
+        epoch_model_path = SAVE_MODEL_PATH.replace('.pth', f'_epoch_{epoch + 1}.pth')
+        torch.save(model.state_dict(), epoch_model_path)
+        logger.info(f"Model saved to {epoch_model_path}")
+        
+        # Also save the latest model without epoch number
+        torch.save(model.state_dict(), SAVE_MODEL_PATH)
+        logger.info(f"Latest model saved to {SAVE_MODEL_PATH}")
+        
+        # Save scaler (only once, same for all epochs)
+        if epoch == 0:
+            with open(SAVE_SCALER_PATH, 'wb') as f:
+                pickle.dump(scaler, f)
+            logger.info(f"Scaler saved to {SAVE_SCALER_PATH}")
     
     # Final validation metrics
     logger.info("FINAL EVALUATION RESULTS")
@@ -477,16 +493,6 @@ def main():
                f"Precision: {val_metrics['precision']:.4f}, "
                f"Recall: {val_metrics['recall']:.4f}, "
                f"F1: {val_metrics['f1']:.4f}")
-    
-    # Save model
-    logger.info("Saving model and scaler...")
-    torch.save(model.state_dict(), SAVE_MODEL_PATH)
-    logger.info(f"Model saved to {SAVE_MODEL_PATH}")
-    
-    # Save scaler
-    with open(SAVE_SCALER_PATH, 'wb') as f:
-        pickle.dump(scaler, f)
-    logger.info(f"Scaler saved to {SAVE_SCALER_PATH}")
     
     # Run sanity checks
     if not sanity_check_metadata_model():

@@ -4,56 +4,16 @@ __pycache__/
 *$py.class
 *.so
 .Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-pip-wheel-metadata/
-share/python-wheels/
 *.egg-info/
-.installed.cfg
+dist/
+build/
 *.egg
-MANIFEST
 
 # Virtual Environment
+.venv/
 venv/
-env/
 ENV/
-env.bak/
-venv.bak/
-
-# PyTorch
-*.pth
-*.pt
-*.onnx
-
-# Model Files
-saved_models/*.pth
-saved_models/*.pt
-saved_models/text_tokenizer/
-
-# Datasets
-datasets/
-data/
-*.csv
-*.json
-*.jsonl
-
-# Logs
-*.log
-logs/
-
-# Environment
-.env
-.env.local
+env/
 
 # IDE
 .vscode/
@@ -61,23 +21,32 @@ logs/
 *.swp
 *.swo
 *~
+
+# Archives
+*.zip
+*.tar.gz
+*.rar
+
+# OS
 .DS_Store
+Thumbs.db
 
-# Testing
-.pytest_cache/
-.coverage
-htmlcov/
-.tox/
+# Logs
+*.log
 
-# Jupyter
+# Temporary files
+*.tmp
+*.bak
+*.swp
+
+# Model checkpoints (except best models)
+saved_models/*_epoch_*.pth
+saved_models/checkpoint_*.pth
+
+# Jupyter Notebooks
 .ipynb_checkpoints/
 *.ipynb
 
-# Database
-*.db
-*.sqlite3
-
-# Temporary files
-tmp/
-temp/
-*.tmp
+# Environment variables
+.env
+.env.local

@@ -81,7 +81,7 @@ class PredictionRequest(BaseModel):
         return v
 
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "text": "Your account has been suspended. Click here to verify: bit.ly/verify123",
                 "image": None,
@@ -94,67 +94,85 @@ class PredictionRequest(BaseModel):
         }
 
 
-class ModelScores(BaseModel):
-    """Individual model prediction scores with detected spam indicators."""
-    text: float = Field(..., ge=0.0, le=1.0, description="Text model score (Pipeline 1)")
-    image: float = Field(..., ge=0.0, le=1.0, description="Image model score (Pipeline 2)")
-    metadata: float = Field(..., ge=0.0, le=1.0, description="Metadata model score (Pipeline 3)")
+class PipelineScores(BaseModel):
+    """Individual pipeline scores - null if modality was not provided."""
+    text_score: Optional[float] = Field(None, ge=0.0, le=1.0, description="Text model score (Pipeline 1)")
+    metadata_score: Optional[float] = Field(None, ge=0.0, le=1.0, description="Metadata model score (Pipeline 3)")
+    image_score: Optional[float] = Field(None, ge=0.0, le=1.0, description="Image model score (Pipeline 2)")
 
 
-class SpamIndicators(BaseModel):
-    """Spam detection indicators from each pipeline."""
-    # Pipeline 1: Text pipeline indicators
-    text_keywords: List[str] = Field(default_factory=list, description="Suspicious keywords detected in text")
-    text_explanation: Optional[str] = Field(None, description="Text pipeline explanation")
-    
-    # Pipeline 2: Image pipeline indicators
-    extracted_text: Optional[str] = Field(None, description="Text extracted from image (OCR)")
-    image_keywords: List[str] = Field(default_factory=list, description="Suspicious keywords detected in image text")
-    image_explanation: Optional[str] = Field(None, description="Image pipeline explanation")
-    
-    # Pipeline 3: Metadata pipeline indicators
-    suspicious_features: Dict[str, Any] = Field(default_factory=dict, description="Suspicious metadata features detected")
-    metadata_explanation: Optional[str] = Field(None, description="Metadata pipeline explanation")
+class ContributingWord(BaseModel):
+    """A token and its attention-based contribution score."""
+    word: str = Field(..., description="Token/word from text")
+    score: float = Field(..., ge=0.0, le=1.0, description="Attention-based contribution score")
+
+
+class ContributingFeature(BaseModel):
+    """A metadata feature and its importance score."""
+    feature: str = Field(..., description="Feature name")
+    score: float = Field(..., ge=0.0, le=1.0, description="Weight-based importance score")
+
+
+class Explainability(BaseModel):
+    """Explainability information from all pipelines."""
+    contributing_words: List[ContributingWord] = Field(
+        default_factory=list,
+        description="Top contributing tokens from text analysis (empty if no text provided)"
+    )
+    contributing_features: List[ContributingFeature] = Field(
+        default_factory=list,
+        description="Top contributing metadata features (empty if no metadata provided)"
+    )
+    ocr_extracted_text: Optional[str] = Field(
+        None,
+        description="Text extracted from image via OCR (null if no image or OCR failed)"
+    )
+
+
+class FusionWeightsUsed(BaseModel):
+    """Actual fusion weights applied after dynamic redistribution."""
+    text: float = Field(..., ge=0.0, le=1.0, description="Weight applied to text score")
+    metadata: float = Field(..., ge=0.0, le=1.0, description="Weight applied to metadata score")
+    image: float = Field(..., ge=0.0, le=1.0, description="Weight applied to image score")
 
 
 class PredictionResponse(BaseModel):
-    """Response model for /predict endpoint with detailed indicators."""
-    label: str = Field(..., description="Classification label: SPAM or HAM")
-    confidence: float = Field(..., ge=0.0, le=1.0, description="Overall confidence score (0.0-1.0)")
-    scores: ModelScores = Field(..., description="Individual model scores")
-    
-    # Detailed spam indicators
-    spam_indicators: SpamIndicators = Field(..., description="Detailed spam detection indicators from each pipeline")
-    
-    # Overall explanation
-    reason: str = Field(..., description="Human-readable explanation of the decision")
-    recommendation: str = Field(..., description="Action recommendation (e.g., 'Block', 'Warn', 'Allow')")
+    """Response model for /predict endpoint with explainability."""
+    final_score: float = Field(..., ge=0.0, le=1.0, description="Fused probability score (0.0-1.0)")
+    decision: str = Field(..., description="Classification decision: SPAM or HAM")
+    confidence: str = Field(..., description="Confidence level: HIGH, MEDIUM, or LOW")
+    pipeline_scores: PipelineScores = Field(..., description="Individual pipeline scores (null if not provided)")
+    explainability: Explainability = Field(..., description="Explainability information")
+    fusion_weights_used: FusionWeightsUsed = Field(..., description="Dynamic weights actually applied")
 
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
-                "label": "SPAM",
-                "confidence": 0.89,
-                "scores": {
-                    "text": 0.87,
-                    "image": 0.74,
-                    "metadata": 0.91
+                "final_score": 0.82,
+                "decision": "SPAM",
+                "confidence": "HIGH",
+                "pipeline_scores": {
+                    "text_score": 0.91,
+                    "metadata_score": 0.76,
+                    "image_score": None
                 },
-                "spam_indicators": {
-                    "text_keywords": ["verify", "urgent", "account", "click"],
-                    "text_explanation": "Multiple urgency and verification keywords detected",
-                    "extracted_text": "Verify your account NOW!",
-                    "image_keywords": ["verify", "urgent"],
-                    "image_explanation": "Extracted text contains suspicious keywords",
-                    "suspicious_features": {
-                        "is_shortened_url": True,
-                        "url_entropy": 4.2,
-                        "suspicious_sender": True
-                    },
-                    "metadata_explanation": "Shortened URL detected with high entropy score"
+                "explainability": {
+                    "contributing_words": [
+                        {"word": "verify", "score": 0.87},
+                        {"word": "account", "score": 0.76},
+                        {"word": "urgent", "score": 0.71}
+                    ],
+                    "contributing_features": [
+                        {"feature": "url_length", "score": 0.91},
+                        {"feature": "has_ip_address", "score": 0.85}
+                    ],
+                    "ocr_extracted_text": None
                 },
-                "reason": "Urgency keywords + shortened URL + suspicious sender detected across multiple modalities",
-                "recommendation": "Block - High confidence phishing attempt"
+                "fusion_weights_used": {
+                    "text": 0.625,
+                    "metadata": 0.375,
+                    "image": 0.0
+                }
             }
         }
 
@@ -171,3 +189,54 @@ class ErrorResponse(BaseModel):
     error: str = Field(..., description="Error type")
     message: str = Field(..., description="Error message")
     details: Optional[Dict[str, Any]] = Field(None, description="Additional error details")
+
+
+class JustifyRequest(BaseModel):
+    """Request model for /justify endpoint - accepts full prediction output."""
+    final_score: float = Field(..., ge=0.0, le=1.0, description="Fused probability score")
+    decision: str = Field(..., description="Classification decision: SPAM or HAM")
+    confidence: str = Field(..., description="Confidence level: HIGH, MEDIUM, or LOW")
+    pipeline_scores: PipelineScores = Field(..., description="Individual pipeline scores")
+    explainability: Explainability = Field(..., description="Explainability information")
+    fusion_weights_used: FusionWeightsUsed = Field(..., description="Dynamic weights applied")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "final_score": 0.82,
+                "decision": "SPAM",
+                "confidence": "HIGH",
+                "pipeline_scores": {
+                    "text_score": 0.91,
+                    "metadata_score": 0.76,
+                    "image_score": None
+                },
+                "explainability": {
+                    "contributing_words": [
+                        {"word": "verify", "score": 0.87},
+                        {"word": "account", "score": 0.76}
+                    ],
+                    "contributing_features": [
+                        {"feature": "url_length", "score": 0.91}
+                    ],
+                    "ocr_extracted_text": None
+                },
+                "fusion_weights_used": {
+                    "text": 0.625,
+                    "metadata": 0.375,
+                    "image": 0.0
+                }
+            }
+        }
+
+
+class JustifyResponse(BaseModel):
+    """Response model for /justify endpoint."""
+    justification: str = Field(..., description="Human-readable explanation of the detection result")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "justification": "This message was flagged because it contains urgent language like 'verify' and 'account', and the link has an unusually long URL with suspicious patterns. These are common signs of phishing."
+            }
+        }
