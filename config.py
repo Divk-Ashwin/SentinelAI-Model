@@ -44,10 +44,14 @@ METADATA_MODEL_CONFIG = {
 }
 
 # Fusion weights (base weights - will be redistributed if modalities missing)
+# Ratios: text:metadata:image = 5:3:2 (0.5:0.3:0.2)
+# When metadata missing: text=0.714, image=0.286
+# When image missing: text=0.625, metadata=0.375
+# When only one available: that modality gets 1.0
 FUSION_WEIGHTS = {
-    "text": 0.45,
-    "metadata": 0.40,
-    "image": 0.15
+    "text": 0.50,
+    "metadata": 0.30,
+    "image": 0.20
 }
 
 # Decision threshold (configurable)

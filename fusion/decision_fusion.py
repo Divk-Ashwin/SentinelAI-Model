@@ -203,6 +203,15 @@ class DecisionFusion:
                 # Moderate risk URL - boost by 10%
                 fused_score = min(fused_score + 0.10, 1.0)
 
+        # Apply image score boost when image analysis is highly confident
+        if image_score is not None:
+            if image_score >= 0.8:
+                # Very high confidence image detection - boost by 25%
+                fused_score = min(fused_score + 0.25, 1.0)
+            elif image_score >= 0.6:
+                # Moderate confidence image detection - boost by 15%
+                fused_score = min(fused_score + 0.15, 1.0)
+
         # Make classification decision
         label = "SPAM" if fused_score > self.threshold else "HAM"
 
