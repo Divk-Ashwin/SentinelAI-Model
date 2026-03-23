@@ -17,6 +17,7 @@ A state-of-the-art **multi-modal deep learning system** for real-time SMS phishi
 - [Solution Approach](#-solution-approach)
 - [System Architecture](#-system-architecture)
 - [Model Performance](#-model-performance)
+- [Datasets](#-datasets)
 - [Technical Specifications](#-technical-specifications)
 - [Test Cases & Examples](#-test-cases--examples)
 - [Installation & Setup](#-installation--setup)
@@ -287,6 +288,280 @@ SentinelAI employs a **3-pipeline multi-modal fusion architecture** with late-st
 - **False Negative Rate**: 2.8% (SPAM classified as HAM)
 - **Total Latency**: 400-500ms per message (all 3 modalities)
 - **Throughput**: 120-150 messages/minute on single CPU core
+
+---
+
+## 📁 Datasets
+
+SentinelAI is trained on a diverse collection of **8 datasets** spanning SMS messages, URLs, and phishing patterns across multiple languages and sources.
+
+### Dataset Summary
+
+| Pipeline | Dataset | Samples | Features | Purpose |
+|----------|---------|---------|----------|---------|
+| **Text** | UCI SMS Spam Collection | 5,572 | 2 | English SMS classification |
+| **Text** | Mendeley SMS Phishing | 5,971 | 5 | Phishing/smishing detection |
+| **Text** | Kaggle Multilingual Spam | 5,572 | 2 | Multilingual spam patterns |
+| **Text** | Smishtank Dataset | 1,062 | 23 | Real-world smishing samples |
+| **Text** | Translated Phishing (Generated) | 860 | 2 | Hindi/Telugu translations |
+| **URL** | PhiUSIIL Phishing URL | 235,795 | 56 | URL feature engineering |
+| **URL** | ISCX-URL-2016 (CIC) | 36,707 | 80 | Multi-class URL classification |
+| **URL** | HuggingFace Phishing Dataset | ~90,000 | 10 | Additional URL samples |
+| | **TOTAL** | **~382,000** | | |
+
+---
+
+### Pipeline 1: Text/SMS Datasets
+
+#### 1. UCI SMS Spam Collection
+- **Source**: [UCI Machine Learning Repository](https://archive.ics.uci.edu/ml/datasets/sms+spam+collection)
+- **Size**: 5,572 messages
+- **Language**: English
+- **Class Distribution**:
+  - HAM (legitimate): 4,825 (86.6%)
+  - SPAM: 747 (13.4%)
+- **Format**: CSV with columns `[label, text]`
+- **Description**: Classic benchmark dataset for SMS spam detection. Contains real SMS messages collected from various sources including the Grumbletext website and NUS SMS Corpus.
+- **Use Case**: Baseline English spam detection training
+
+#### 2. Mendeley SMS Phishing Dataset
+- **Source**: [Mendeley Data](https://data.mendeley.com/datasets/f45bkkt8pr/1)
+- **Size**: 5,971 messages
+- **Language**: English
+- **Class Distribution**:
+  - HAM: 4,844 (81.1%)
+  - Smishing: 616 (10.3%)
+  - Spam: 466 (7.8%)
+  - Other: 45 (0.8%)
+- **Format**: CSV with columns `[LABEL, TEXT, URL, EMAIL, PHONE]`
+- **Features**: Includes extracted URLs, emails, and phone numbers from messages
+- **Description**: Comprehensive phishing SMS dataset with additional metadata extraction. Distinguishes between generic spam and targeted smishing attacks.
+- **Use Case**: Training model to distinguish phishing from regular spam
+
+#### 3. Kaggle Multilingual Spam Data
+- **Source**: [Kaggle](https://www.kaggle.com/datasets/uciml/sms-spam-collection-dataset)
+- **Size**: 5,572 messages
+- **Language**: English (with some multilingual samples)
+- **Class Distribution**:
+  - HAM: 4,825 (86.6%)
+  - SPAM: 747 (13.4%)
+- **Format**: CSV with columns `[labels, text]`
+- **Description**: Extended version of UCI dataset with additional preprocessing and quality improvements.
+- **Use Case**: Cross-validation and ensemble training
+
+#### 4. Smishtank Dataset
+- **Source**: [Smishtank.com](https://smishtank.com/) - Community-reported smishing
+- **Size**: 1,062 messages
+- **Language**: English (real-world samples)
+- **Columns (23 features)**:
+  - `messageid`, `Fulltext`, `Sender`, `SenderType`
+  - `timeReceived`, `MainText`, `Url`, `Subdomain`
+  - `Domain`, `TLD`, `RedirectedURL`, `Detected`
+  - `Malicious`, `Phishing`, `Suspicious`, `Malware`
+  - `Brand`, `URL Subcategory`, `Message Categories`
+  - `FullyQualifiedDomain`, `Domain Registrar`
+  - `Domain Creation Date`, `Domain Last Update`
+- **Sender Types**:
+  - Phone Number: 722 (68.0%)
+  - Email to Text: 230 (21.7%)
+  - Short Code: 110 (10.3%)
+- **Description**: Real-world smishing messages reported by users. Includes rich metadata about URLs, domains, and threat categories. Valuable for understanding current attack patterns.
+- **Use Case**: Real-world pattern learning and URL metadata correlation
+
+#### 5. Translated Phishing Dataset (Generated)
+- **Source**: Generated using SentinelAI's `translate_augment.py`
+- **Size**: 860 messages
+- **Languages**: Hindi (430), Telugu (430)
+- **Class Distribution**:
+  - SPAM: 430 (50%)
+  - HAM: 430 (50%)
+- **Format**: CSV with columns `[text, label]`
+- **Generation Process**:
+  1. Selected 500 English spam + 500 ham from existing datasets
+  2. Translated to Hindi using Google Translate API
+  3. Translated to Telugu using Google Translate API
+  4. Added 30 manually crafted samples per language
+- **Sample Hindi Spam**:
+  ```
+  आपका खाता बंद हो जाएगा, अभी verify करें: xyz.com
+  (Your account will be closed, verify now: xyz.com)
+  ```
+- **Sample Telugu Spam**:
+  ```
+  మీ Amazon ఖాతా సస్పెండ్ అయింది. వెరిఫై చేయండి: amzn-verify.tk
+  (Your Amazon account is suspended. Verify: amzn-verify.tk)
+  ```
+- **Use Case**: Multilingual model training for Indian languages
+
+---
+
+### Pipeline 3: URL Metadata Datasets
+
+#### 6. PhiUSIIL Phishing URL Dataset
+- **Source**: [PhiUSIIL - University of Illinois](https://github.com/phiusiil/phishing-dataset)
+- **Size**: 235,795 URLs
+- **Features**: 56 engineered features
+- **Class Distribution**:
+  - Phishing (1): 134,850 (57.2%)
+  - Legitimate (0): 100,945 (42.8%)
+- **Key Features**:
+  - **URL-based**: length, num_dots, num_digits, has_ip, is_https
+  - **Domain-based**: domain_length, subdomain_count, tld_type
+  - **Lexical**: entropy, special_char_ratio, digit_ratio
+  - **Host-based**: domain_age, alexa_rank, whois_data
+- **Description**: Largest public phishing URL dataset. Contains URLs collected from PhishTank, OpenPhish, and legitimate sources from Alexa top sites.
+- **Use Case**: Primary training data for URL metadata model
+
+#### 7. ISCX-URL-2016 Dataset (CIC)
+- **Source**: [Canadian Institute for Cybersecurity](https://www.unb.ca/cic/datasets/url-2016.html)
+- **Size**: 36,707 URLs
+- **Features**: 80 engineered features
+- **Class Distribution** (5 classes):
+  - Defacement: 7,930 (21.6%)
+  - Benign: 7,781 (21.2%)
+  - Phishing: 7,586 (20.7%)
+  - Malware: 6,712 (18.3%)
+  - Spam: 6,698 (18.2%)
+- **Key Features**:
+  - **Lexical**: URL length, hostname length, path length
+  - **Host-based**: IP address, geo-location, ASN
+  - **Content-based**: Page content, scripts, iframes
+  - **DNS-based**: TTL, record types, DNSSEC
+- **Description**: Academic benchmark dataset from University of New Brunswick. Multi-class classification with detailed threat categorization.
+- **Use Case**: Multi-class URL classification and threat categorization
+
+#### 8. HuggingFace Phishing Dataset (ealvaradob)
+- **Source**: [HuggingFace Datasets](https://huggingface.co/datasets/ealvaradob/phishing-dataset)
+- **Size**: ~90,000 URLs (estimated)
+- **Features**: 10 core features
+- **Class Distribution**: Binary (Phishing/Legitimate)
+- **Key Features**:
+  - `url`: Full URL string
+  - `label`: Binary classification
+  - `domain`, `path`, `query_params`
+  - `is_shortened`, `has_suspicious_tld`
+- **Description**: Community-contributed phishing URLs from HuggingFace. Regularly updated with new samples.
+- **Use Case**: Supplementary training data and validation
+
+---
+
+### Data Preprocessing
+
+#### Text Pipeline Preprocessing
+```python
+# 1. Load all datasets
+datasets = [uci, mendeley, kaggle, smishtank, translated]
+
+# 2. Normalize labels (ham=0, spam/smishing/phishing=1)
+df['label'] = df['label'].map({'ham': 0, 'spam': 1, 'Smishing': 1, ...})
+
+# 3. Clean text
+- Remove URLs (extracted separately)
+- Remove phone numbers
+- Lowercase conversion
+- Remove excessive whitespace
+
+# 4. Balance classes (undersample majority)
+# Target: 50% HAM, 50% SPAM
+
+# 5. Split: 80% train, 10% val, 10% test
+# Stratified split to maintain class distribution
+```
+
+#### URL Pipeline Preprocessing
+```python
+# 1. Feature extraction (15 features)
+features = {
+    'url_length': len(url),
+    'num_dots': url.count('.'),
+    'num_digits': sum(c.isdigit() for c in url),
+    'has_ip': bool(re.match(r'\d+\.\d+\.\d+\.\d+', url)),
+    'is_https': url.startswith('https'),
+    'entropy': calculate_shannon_entropy(url),
+    'is_shortened': domain in SHORTENERS,
+    'suspicious_tld': tld in ['.tk', '.ml', '.xyz', '.top'],
+    # ... 7 more features
+}
+
+# 2. Normalize with StandardScaler
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(X)
+
+# 3. Split: 80% train, 20% test
+```
+
+---
+
+### Dataset Statistics Summary
+
+#### By Language
+| Language | Samples | Percentage |
+|----------|---------|------------|
+| English | ~18,000 | 94.7% |
+| Hindi | 430 | 2.3% |
+| Telugu | 430 | 2.3% |
+| Hinglish (mixed) | ~117 | 0.7% |
+
+#### By Class (Text)
+| Class | Samples | Percentage |
+|-------|---------|------------|
+| HAM (Legitimate) | ~14,494 | 76.3% |
+| SPAM/Phishing | ~4,503 | 23.7% |
+
+#### By Class (URL)
+| Class | Samples | Percentage |
+|-------|---------|------------|
+| Phishing/Malicious | ~157,776 | 55.1% |
+| Legitimate/Benign | ~128,726 | 44.9% |
+
+#### Combined Training Data
+- **Text Model**: ~19,000 unique messages
+- **Metadata Model**: ~272,000 unique URLs
+- **Total Samples**: ~291,000
+
+---
+
+### Data Sources & Citations
+
+```bibtex
+@misc{uci_sms_spam,
+  title={SMS Spam Collection Dataset},
+  author={Almeida, Tiago A. and Hidalgo, José María Gómez},
+  year={2011},
+  publisher={UCI Machine Learning Repository},
+  url={https://archive.ics.uci.edu/ml/datasets/sms+spam+collection}
+}
+
+@article{mendeley_sms_phishing,
+  title={SMS Phishing Dataset for Machine Learning},
+  author={Mishra, Sidhant and others},
+  journal={Mendeley Data},
+  year={2022},
+  doi={10.17632/f45bkkt8pr.1}
+}
+
+@inproceedings{iscx_url_2016,
+  title={Detecting Malicious URLs Using Lexical Analysis},
+  author={Mamun, Mohammad and others},
+  booktitle={International Conference on Network and System Security},
+  year={2016},
+  organization={Canadian Institute for Cybersecurity}
+}
+
+@misc{phiusiil_dataset,
+  title={PhiUSIIL Phishing URL Dataset},
+  author={University of Illinois},
+  year={2024},
+  url={https://github.com/phiusiil/phishing-dataset}
+}
+
+@misc{smishtank,
+  title={Smishtank - Community Smishing Reports},
+  author={Smishtank Contributors},
+  year={2023},
+  url={https://smishtank.com/}
+}
+```
 
 ---
 
