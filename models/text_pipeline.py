@@ -195,8 +195,12 @@ class TextClassifier(nn.Module):
     ):
         super(TextClassifier, self).__init__()
 
-        # Load pretrained multilingual BERT
-        self.bert = AutoModel.from_pretrained(model_name)
+        # Load pretrained multilingual BERT with 'eager' attention for explainability
+        # SDPA attention doesn't support output_attentions, so we use eager mode
+        self.bert = AutoModel.from_pretrained(
+            model_name,
+            attn_implementation='eager'
+        )
 
         # Classification head
         self.dropout = nn.Dropout(dropout)
@@ -396,51 +400,76 @@ class TextPipeline:
             input_ids = inputs['input_ids'][0].cpu().numpy()
             tokens = self.tokenizer.convert_ids_to_tokens(input_ids)
 
-            # Build token-score pairs, excluding special tokens and padding
-            token_scores = []
-            for idx, (token, attn_score, mask) in enumerate(zip(tokens, cls_attention, attention_mask)):
-                # Skip padding (mask=0), [CLS], [SEP], and other special tokens
+            # DEBUG: Show raw attention data
+            print(f"DEBUG: Raw attention shape: {attentions[-1].shape}")
+            print(f"DEBUG: Tokens: {tokens[:10]}")
+            print(f"DEBUG: Attention scores (CLS to all): {cls_attention[:10]}")
+            print(f"DEBUG: Attention mask: {attention_mask[:10]}")
+
+            # Merge subword tokens into full words with averaged attention scores
+            merged_words = []
+            merged_scores = []
+            current_word = ""
+            current_score = 0.0
+            current_count = 0
+
+            for token, score, mask in zip(tokens, cls_attention, attention_mask):
+                # Skip padding
                 if mask == 0:
                     continue
-                if token in ['<s>', '</s>', '<pad>', '[CLS]', '[SEP]', '[PAD]']:
-                    continue
-                if token.startswith('▁'):
-                    # XLM-RoBERTa uses ▁ for word boundaries
-                    token = token[1:]
-                if not token or token.isspace():
+
+                # Skip special tokens
+                if token in ['<s>', '</s>', '<pad>', '<unk>', '[CLS]', '[SEP]', '[PAD]']:
                     continue
 
-                token_scores.append((token, float(attn_score)))
+                # ▁ prefix means start of new word (U+2581)
+                if token.startswith('\u2581'):
+                    # Save previous word if exists
+                    if current_word:
+                        merged_words.append(current_word)
+                        merged_scores.append(current_score / current_count)
+                    # Start new word (remove ▁ prefix)
+                    current_word = token[1:]
+                    current_score = float(score)
+                    current_count = 1
+                else:
+                    # Continue building current word (subword continuation)
+                    current_word += token
+                    current_score += float(score)
+                    current_count += 1
 
-            # Sort by attention score descending
-            token_scores.sort(key=lambda x: x[1], reverse=True)
-
-            # DEBUG: Show what we found
-            print(f"DEBUG: Tokens found: {len(token_scores)}")
-            print(f"DEBUG: Top tokens: {token_scores[:5]}")
-
-            # Deduplicate tokens (keep highest score for each unique token)
-            seen_tokens = set()
-            unique_contributions = []
-            for token, score in token_scores:
-                token_lower = token.lower()
-                if token_lower not in seen_tokens:
-                    seen_tokens.add(token_lower)
-                    unique_contributions.append(TokenContribution(word=token, score=score))
-                if len(unique_contributions) >= top_k:
-                    break
+            # Don't forget last word
+            if current_word:
+                merged_words.append(current_word)
+                merged_scores.append(current_score / current_count)
 
             # Normalize scores to 0-1 range
-            if unique_contributions:
-                max_score = max(c.score for c in unique_contributions)
+            if merged_scores:
+                max_score = max(merged_scores)
                 if max_score > 0:
-                    for c in unique_contributions:
-                        c.score = c.score / max_score
+                    merged_scores = [s / max_score for s in merged_scores]
 
-            print(f"DEBUG: Unique contributions: {len(unique_contributions)}")
-            print(f"DEBUG: Contributions: {[(c.word, c.score) for c in unique_contributions]}")
+            # Sort by score and take top K
+            # Filter out short/meaningless tokens (len < 3)
+            word_score_pairs = [
+                (w, s) for w, s in zip(merged_words, merged_scores)
+                if len(w) >= 3 and not w.isspace()
+            ]
+            word_score_pairs.sort(key=lambda x: x[1], reverse=True)
+            top_words = word_score_pairs[:top_k]
+
+            # Convert to TokenContribution objects
+            unique_contributions = [
+                TokenContribution(word=w, score=round(s, 3))
+                for w, s in top_words
+            ]
+
+            print(f"DEBUG: Merged words found: {len(merged_words)}")
+            print(f"DEBUG: After filtering (len>=3): {len(word_score_pairs)}")
+            print(f"DEBUG: Contributing words: {[(c.word, c.score) for c in unique_contributions]}")
 
             return unique_contributions
+
 
         except Exception as e:
             logger.warning(f"Failed to extract attention contributions: {e}")
