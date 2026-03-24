@@ -1,5 +1,5 @@
 """
-Data Augmentation: Translate English SMS to Hindi/Telugu for multilingual training
+Data Augmentation: Translate English SMS to Hindi/Telugu/Urdu/Tamil for multilingual training
 Reads first 500 spam + 500 ham from pipeline 1/, translates them, adds hardcoded samples
 """
 import os
@@ -89,6 +89,78 @@ TELUGU_HAM = [
     "NSDL: మీ PAN card dispatch అయింది"
 ]
 
+URDU_SPAM = [
+    "آپ کا اکاؤنٹ بند ہو جائے گا، ابھی verify کریں",
+    "مبارک ہو! آپ نے 50,000 روپے جیتے ہیں",
+    "فوری کلک کریں ورنہ account block ہوگا",
+    "KYC update کریں ورنہ service بند ہوگی",
+    "آپ کا UPI block ہو گیا، فوری update کریں",
+    "آپ کا account suspend ہو گیا، link پر click کریں",
+    "Free gift claim کریں، offer صرف آج تک",
+    "Lottery winner ہیں آپ، ابھی claim کریں",
+    "Bank account verify کریں ورنہ بند ہوگا",
+    "آپ کے account میں suspicious activity ملی",
+    "TRAI: آپ کا number block ہوگا، verify کریں",
+    "آپ کا Aadhaar link نہیں ہے، ابھی کریں",
+    "Prize money claim کریں: http://win-prize.xyz",
+    "آپ کے account سے unauthorized transaction ہوا",
+    "SBI: آپ کا KYC expire ہو گیا، update کریں"
+]
+
+URDU_HAM = [
+    "آپ کا OTP 847293 ہے۔ 10 منٹ میں expire ہوگا۔ کسی سے share نہ کریں",
+    "آپ کے اکاؤنٹ سے Rs.500 debit ہوئے۔ Available balance: Rs.4500",
+    "آپ کا Amazon order deliver ہو گیا۔ Review کریں",
+    "HDFC Bank: آپ کا payment successful رہا",
+    "آپ کا Flipkart order ship ہو گیا۔ Track کریں",
+    "SBI: آپ کے اکاؤنٹ میں Rs.10000 credit ہوئے",
+    "آپ کی EMI successfully deduct ہو گئی",
+    "Paytm: Payment of Rs.200 received successfully",
+    "آپ کا recharge successful ہو گیا",
+    "IRCTC: آپ کی ticket confirm ہو گئی",
+    "آپ کا Swiggy order راستے میں ہے",
+    "Airtel: آپ کا bill Rs.299 due ہے",
+    "LIC: آپ کی premium successfully deduct ہوئی",
+    "NSDL: آپ کا PAN card dispatch ہو گیا",
+    "Zomato: آپ کا order 10 منٹ میں آئے گا"
+]
+
+TAMIL_SPAM = [
+    "உங்கள் கணக்கு நிறுத்தப்படும், உடனே verify செய்யுங்கள்",
+    "வாழ்த்துக்கள்! நீங்கள் ரூ.50,000 வென்றீர்கள்",
+    "உடனே click செய்யுங்கள் இல்லையேல் account block ஆகும்",
+    "உங்கள் KYC update செய்யுங்கள் இல்லை service நிற்கும்",
+    "உங்கள் வங்கி விவரங்களை verify செய்யுங்கள் இப்போதே",
+    "Free gift claim செய்யுங்கள், offer இன்றுடன் முடியும்",
+    "உங்கள் account ல் suspicious activity கண்டுபிடிக்கப்பட்டது",
+    "Lottery winner நீங்களே, உடனே claim செய்யுங்கள்",
+    "உங்கள் UPI block ஆனது, உடனே update செய்யுங்கள்",
+    "உங்கள் account suspend ஆனது, link click செய்யுங்கள்",
+    "TRAI: உங்கள் number block ஆகும், verify செய்யுங்கள்",
+    "உங்கள் Aadhaar link இல்லை, இப்போதே செய்யுங்கள்",
+    "Prize money claim செய்யுங்கள்: http://win-prize.xyz",
+    "உங்கள் account இலிருந்து unauthorized transaction நடந்தது",
+    "SBI: உங்கள் KYC expire ஆனது, update செய்யுங்கள்"
+]
+
+TAMIL_HAM = [
+    "உங்கள் OTP 847293. 10 நிமிடங்களில் expire ஆகும். யாரிடமும் சொல்லாதீர்கள்",
+    "உங்கள் கணக்கிலிருந்து Rs.500 debit ஆனது. Balance: Rs.4500",
+    "உங்கள் Amazon order deliver ஆனது. Review செய்யுங்கள்",
+    "HDFC Bank: உங்கள் payment successful ஆனது",
+    "உங்கள் Flipkart order ship ஆனது. Track செய்யுங்கள்",
+    "SBI: உங்கள் கணக்கில் Rs.10000 credit ஆனது",
+    "உங்கள் EMI successfully deduct ஆனது",
+    "Paytm: Rs.200 payment received successfully",
+    "உங்கள் recharge successful ஆனது",
+    "IRCTC: உங்கள் ticket confirm ஆனது",
+    "உங்கள் Swiggy order வழியில் உள்ளது",
+    "Airtel: உங்கள் bill Rs.299 due உள்ளது",
+    "LIC: உங்கள் premium successfully deduct ஆனது",
+    "NSDL: உங்கள் PAN card dispatch ஆனது",
+    "Zomato: உங்கள் order 10 நிமிடங்களில் வரும்"
+]
+
 
 def load_english_data():
     """Load first 500 spam + 500 ham from pipeline 1 CSVs."""
@@ -124,6 +196,10 @@ def load_english_data():
 
         # Normalize column names
         df.columns = df.columns.str.lower()
+
+        # Handle both 'label' and 'labels' columns
+        if "labels" in df.columns and "label" not in df.columns:
+            df["label"] = df["labels"]
 
         # Extract label and text
         if "label" in df.columns and "text" in df.columns:
@@ -181,22 +257,40 @@ def main():
     all_data = []
 
     # Translate to Hindi
-    print("\n[1/4] Translating spam to Hindi...")
+    print("\n[1/8] Translating spam to Hindi...")
     hindi_spam = translate_batch(spam_texts, "hi", label=1, language_name="Hindi")
     all_data.extend(hindi_spam)
 
-    print("\n[2/4] Translating ham to Hindi...")
+    print("\n[2/8] Translating ham to Hindi...")
     hindi_ham = translate_batch(ham_texts, "hi", label=0, language_name="Hindi")
     all_data.extend(hindi_ham)
 
     # Translate to Telugu
-    print("\n[3/4] Translating spam to Telugu...")
+    print("\n[3/8] Translating spam to Telugu...")
     telugu_spam = translate_batch(spam_texts, "te", label=1, language_name="Telugu")
     all_data.extend(telugu_spam)
 
-    print("\n[4/4] Translating ham to Telugu...")
+    print("\n[4/8] Translating ham to Telugu...")
     telugu_ham = translate_batch(ham_texts, "te", label=0, language_name="Telugu")
     all_data.extend(telugu_ham)
+
+    # Translate to Urdu
+    print("\n[5/8] Translating spam to Urdu...")
+    urdu_spam = translate_batch(spam_texts, "ur", label=1, language_name="Urdu")
+    all_data.extend(urdu_spam)
+
+    print("\n[6/8] Translating ham to Urdu...")
+    urdu_ham = translate_batch(ham_texts, "ur", label=0, language_name="Urdu")
+    all_data.extend(urdu_ham)
+
+    # Translate to Tamil
+    print("\n[7/8] Translating spam to Tamil...")
+    tamil_spam = translate_batch(spam_texts, "ta", label=1, language_name="Tamil")
+    all_data.extend(tamil_spam)
+
+    print("\n[8/8] Translating ham to Tamil...")
+    tamil_ham = translate_batch(ham_texts, "ta", label=0, language_name="Tamil")
+    all_data.extend(tamil_ham)
 
     # Add hardcoded samples
     print("\nAdding hardcoded samples...")
@@ -208,17 +302,66 @@ def main():
         all_data.append({"text": text, "label": 1})
     for text in TELUGU_HAM:
         all_data.append({"text": text, "label": 0})
+    for text in URDU_SPAM:
+        all_data.append({"text": text, "label": 1})
+    for text in URDU_HAM:
+        all_data.append({"text": text, "label": 0})
+    for text in TAMIL_SPAM:
+        all_data.append({"text": text, "label": 1})
+    for text in TAMIL_HAM:
+        all_data.append({"text": text, "label": 0})
 
-    # Create DataFrame and save
+    # Create DataFrame
     df = pd.DataFrame(all_data)
-    df.to_csv(OUTPUT_CSV, index=False, encoding='utf-8')
 
-    print("=" * 60)
-    print(f"Total translated samples: {len(df)}")
-    print(f"Spam: {(df['label'] == 1).sum()}")
-    print(f"Ham: {(df['label'] == 0).sum()}")
+    # Calculate summary statistics
+    initial_rows = len(df)
+    hindi_spam_count = len(hindi_spam)
+    hindi_ham_count = len(hindi_ham)
+    telugu_spam_count = len(telugu_spam)
+    telugu_ham_count = len(telugu_ham)
+    urdu_spam_count = len(urdu_spam)
+    urdu_ham_count = len(urdu_ham)
+    tamil_spam_count = len(tamil_spam)
+    tamil_ham_count = len(tamil_ham)
+    hardcoded_count = len(HINDI_SPAM) + len(HINDI_HAM) + len(TELUGU_SPAM) + len(TELUGU_HAM) + len(URDU_SPAM) + len(URDU_HAM) + len(TAMIL_SPAM) + len(TAMIL_HAM)
+
+    # Calculate rows dropped (failed translations)
+    expected_translations = 500 * 8  # 500 each for Hindi/Telugu/Urdu/Tamil spam and ham
+    actual_translations = hindi_spam_count + hindi_ham_count + telugu_spam_count + telugu_ham_count + urdu_spam_count + urdu_ham_count + tamil_spam_count + tamil_ham_count
+    rows_dropped = expected_translations - actual_translations
+
+    # Check if file exists to determine mode
+    file_exists = os.path.exists(OUTPUT_CSV)
+
+    if file_exists:
+        # Append mode (don't write header)
+        df.to_csv(OUTPUT_CSV, mode='a', header=False, index=False, encoding='utf-8')
+        print("\nAppended to existing CSV file")
+    else:
+        # Write mode (include header)
+        df.to_csv(OUTPUT_CSV, mode='w', header=True, index=False, encoding='utf-8')
+        print("\nCreated new CSV file")
+
+    # Print summary
+    print("\n" + "=" * 50)
+    print("TRANSLATION SUMMARY")
+    print("=" * 50)
+    print(f"Hindi spam translated  : {hindi_spam_count}")
+    print(f"Hindi ham translated   : {hindi_ham_count}")
+    print(f"Telugu spam translated : {telugu_spam_count}")
+    print(f"Telugu ham translated  : {telugu_ham_count}")
+    print(f"Urdu spam translated   : {urdu_spam_count}")
+    print(f"Urdu ham translated    : {urdu_ham_count}")
+    print(f"Tamil spam translated  : {tamil_spam_count}")
+    print(f"Tamil ham translated   : {tamil_ham_count}")
+    print(f"Hardcoded samples      : {hardcoded_count}")
+    print(f"Rows dropped (failed)  : {rows_dropped}")
+    print("=" * 50)
+    print(f"Total rows saved       : {len(df)}")
+    print("=" * 50)
     print(f"Saved to: {OUTPUT_CSV}")
-    print("=" * 60)
+    print("=" * 50)
 
 
 if __name__ == "__main__":

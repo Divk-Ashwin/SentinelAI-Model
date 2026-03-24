@@ -313,7 +313,7 @@ def load_and_prepare_data():
     total_raw = len(df)
     logger.info(f"[Step 1] Raw data loaded: {total_raw} rows")
 
-    # Step 1.5: Load translated multilingual data (Hindi/Telugu) if available
+    # Step 1.5: Load translated multilingual data (Hindi/Telugu/Urdu/Tamil) if available
     translated_csv = os.path.join(PIPELINE_DIR, "translated_phishing.csv")
     if os.path.exists(translated_csv):
         try:
@@ -321,9 +321,21 @@ def load_and_prepare_data():
             translated_df.columns = translated_df.columns.str.lower()
             if "label" in translated_df.columns and "text" in translated_df.columns:
                 df = pd.concat([df, translated_df], ignore_index=True)
-                logger.info(f"[Step 1.5] Loaded translated data: {len(translated_df)} rows (Hindi/Telugu)")
+                logger.info(f"[Step 1.5] Loaded translated data: {len(translated_df)} rows (Hindi/Telugu/Urdu/Tamil)")
         except Exception as e:
             logger.warning(f"Could not load translated data: {e}")
+
+    # Step 1.55: Load hard negatives (legitimate but harsh messages to fix false positives)
+    hard_negatives_csv = os.path.join(PIPELINE_DIR, "hard_negatives.csv")
+    if os.path.exists(hard_negatives_csv):
+        try:
+            hard_neg_df = pd.read_csv(hard_negatives_csv, encoding='utf-8')
+            hard_neg_df.columns = hard_neg_df.columns.str.lower()
+            if "label" in hard_neg_df.columns and "text" in hard_neg_df.columns:
+                df = pd.concat([df, hard_neg_df], ignore_index=True)
+                logger.info(f"[Step 1.55] Loaded hard negatives: {len(hard_neg_df)} rows (harsh but legitimate HAM)")
+        except Exception as e:
+            logger.warning(f"Could not load hard negatives: {e}")
 
     # Step 1.6: Add hardcoded global phishing/ham samples for better coverage
     logger.info("[Step 1.6] Adding hardcoded global phishing and ham samples...")

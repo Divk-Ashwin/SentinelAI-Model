@@ -8,7 +8,10 @@ from typing import Dict, Tuple, Optional, List
 from dataclasses import dataclass
 from enum import Enum
 
-from config import FUSION_WEIGHTS, SPAM_THRESHOLD, CONFIDENCE_THRESHOLDS
+from config import (
+    FUSION_WEIGHTS, SPAM_THRESHOLD, CONFIDENCE_THRESHOLDS,
+    TRUSTED_DOMAINS, TRUSTED_SENDERS, SUSPICIOUS_DOMAIN_PATTERNS
+)
 
 
 class ConfidenceLevel(Enum):
@@ -81,6 +84,27 @@ class DecisionFusion:
         if not 0.0 <= threshold <= 1.0:
             raise ValueError(f"Threshold must be between 0.0 and 1.0, got {threshold}")
 
+    def _is_trusted_domain(self, url: Optional[str]) -> bool:
+        """Check if URL contains a trusted domain."""
+        if not url:
+            return False
+        url_lower = url.lower()
+        return any(trusted in url_lower for trusted in TRUSTED_DOMAINS)
+
+    def _is_suspicious_domain(self, url: Optional[str]) -> bool:
+        """Check if URL contains a suspicious domain pattern."""
+        if not url:
+            return False
+        url_lower = url.lower()
+        return any(pattern in url_lower for pattern in SUSPICIOUS_DOMAIN_PATTERNS)
+
+    def _is_trusted_sender(self, sender: Optional[str]) -> bool:
+        """Check if sender ID is in trusted list."""
+        if not sender:
+            return False
+        sender_upper = sender.upper().strip()
+        return sender_upper in TRUSTED_SENDERS
+
     def _calculate_confidence(self, score: float) -> ConfidenceLevel:
         """
         Determine confidence level based on fused score.
@@ -145,7 +169,9 @@ class DecisionFusion:
         text_score: Optional[float] = None,
         metadata_score: Optional[float] = None,
         image_score: Optional[float] = None,
-        url_text_score: Optional[float] = None
+        url_text_score: Optional[float] = None,
+        url: Optional[str] = None,
+        sender: Optional[str] = None
     ) -> FusionResult:
         """
         Perform late fusion on multi-modal predictions.
@@ -158,6 +184,8 @@ class DecisionFusion:
             metadata_score: Prediction score from metadata model (0.0 - 1.0), or None
             image_score: Prediction score from image model (0.0 - 1.0), or None
             url_text_score: Optional URL text risk score (0.0 - 1.0) from metadata pipeline
+            url: URL from message (for trust checking)
+            sender: Sender ID (for trust checking)
 
         Returns:
             FusionResult with label, score, confidence, and details
@@ -195,22 +223,38 @@ class DecisionFusion:
             )
 
         # Apply URL text score boost based on risk level
+        # Reduced boost amounts to prevent false positives
         if url_text_score is not None:
             if url_text_score >= 0.75:
-                # Very high risk URL - boost by 20%
-                fused_score = min(fused_score + 0.20, 1.0)
-            elif url_text_score >= 0.5:
-                # Moderate risk URL - boost by 10%
+                # Very high risk URL - boost by 10% (reduced from 20%)
                 fused_score = min(fused_score + 0.10, 1.0)
+            elif url_text_score >= 0.5:
+                # Moderate risk URL - boost by 5% (reduced from 10%)
+                fused_score = min(fused_score + 0.05, 1.0)
 
         # Apply image score boost when image analysis is highly confident
         if image_score is not None:
             if image_score >= 0.8:
-                # Very high confidence image detection - boost by 25%
-                fused_score = min(fused_score + 0.25, 1.0)
+                # Very high confidence image detection - boost by 20% (reduced from 25%)
+                fused_score = min(fused_score + 0.20, 1.0)
             elif image_score >= 0.6:
-                # Moderate confidence image detection - boost by 15%
-                fused_score = min(fused_score + 0.15, 1.0)
+                # Moderate confidence image detection - boost by 10% (reduced from 15%)
+                fused_score = min(fused_score + 0.10, 1.0)
+
+        # Trust bonus for known legitimate domains/senders
+        is_trusted_domain = self._is_trusted_domain(url)
+        is_trusted_sender = self._is_trusted_sender(sender)
+        is_suspicious_domain = self._is_suspicious_domain(url)
+
+        if is_trusted_domain and is_trusted_sender:
+            # Both domain and sender are trusted - maximum trust bonus
+            fused_score = max(fused_score - 0.50, 0.0)
+        elif is_trusted_domain or is_trusted_sender:
+            # Either domain or sender is trusted - very strong trust bonus
+            fused_score = max(fused_score - 0.35, 0.0)
+        elif is_suspicious_domain:
+            # Known suspicious TLD - increase spam score
+            fused_score = min(fused_score + 0.15, 1.0)
 
         # Make classification decision
         label = "SPAM" if fused_score > self.threshold else "HAM"
@@ -232,7 +276,9 @@ class DecisionFusion:
         text_score: Optional[float] = None,
         metadata_score: Optional[float] = None,
         image_score: Optional[float] = None,
-        url_text_score: Optional[float] = None
+        url_text_score: Optional[float] = None,
+        url: Optional[str] = None,
+        sender: Optional[str] = None
     ) -> Tuple[str, float, str]:
         """
         Simplified fusion returning just (label, score, confidence).
@@ -242,11 +288,13 @@ class DecisionFusion:
             metadata_score: Prediction score from metadata model (0.0 - 1.0), or None
             image_score: Prediction score from image model (0.0 - 1.0), or None
             url_text_score: Optional URL text risk score (0.0 - 1.0)
+            url: URL from message (for trust checking)
+            sender: Sender ID (for trust checking)
 
         Returns:
             Tuple of (label, fused_score, confidence_level)
         """
-        result = self.fuse(text_score, metadata_score, image_score, url_text_score)
+        result = self.fuse(text_score, metadata_score, image_score, url_text_score, url, sender)
         return result.label, result.score, result.confidence.value
 
     def set_threshold(self, threshold: float):
@@ -294,6 +342,8 @@ def fuse_predictions(
     metadata_score: Optional[float] = None,
     image_score: Optional[float] = None,
     url_text_score: Optional[float] = None,
+    url: Optional[str] = None,
+    sender: Optional[str] = None,
     threshold: float = SPAM_THRESHOLD
 ) -> Dict:
     """
@@ -304,11 +354,13 @@ def fuse_predictions(
         metadata_score: Metadata model score (or None if unavailable)
         image_score: Image model score (or None if unavailable)
         url_text_score: Optional URL text risk score (or None if unavailable)
+        url: URL from message (for trust checking)
+        sender: Sender ID (for trust checking)
         threshold: Decision threshold
 
     Returns:
         Dictionary with fusion result
     """
     fusion = DecisionFusion(threshold=threshold)
-    result = fusion.fuse(text_score, metadata_score, image_score, url_text_score)
+    result = fusion.fuse(text_score, metadata_score, image_score, url_text_score, url, sender)
     return result.to_dict()

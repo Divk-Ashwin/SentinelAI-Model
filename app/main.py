@@ -269,12 +269,18 @@ async def predict(request: PredictionRequest):
         # ==================== DECISION FUSION ====================
         logger.info("🔀 Performing decision fusion...")
 
+        # Extract url and sender for trust checking (optional parameters)
+        url = request.metadata.url if request.metadata else None
+        sender = request.metadata.sender if request.metadata else None
+
         # Fusion with None for missing modalities (dynamic weight redistribution)
         fusion_result = fusion_module.fuse(
             text_score=text_score,
             metadata_score=metadata_score,
             image_score=image_score,
-            url_text_score=url_text_score
+            url_text_score=url_text_score,
+            url=url,
+            sender=sender
         )
 
         # Extract fusion weights (0.0 for modalities not used)

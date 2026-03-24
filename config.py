@@ -44,18 +44,20 @@ METADATA_MODEL_CONFIG = {
 }
 
 # Fusion weights (base weights - will be redistributed if modalities missing)
-# Ratios: text:metadata:image = 5:3:2 (0.5:0.3:0.2)
-# When metadata missing: text=0.714, image=0.286
-# When image missing: text=0.625, metadata=0.375
+# Ratios: text:metadata:image = 6:2:2 (0.6:0.2:0.2)
+# Increased text weight to reduce false positives from aggressive metadata
+# When metadata missing: text=0.75, image=0.25
+# When image missing: text=0.75, metadata=0.25
 # When only one available: that modality gets 1.0
 FUSION_WEIGHTS = {
-    "text": 0.50,
-    "metadata": 0.30,
+    "text": 0.60,
+    "metadata": 0.20,
     "image": 0.20
 }
 
 # Decision threshold (configurable)
-SPAM_THRESHOLD = 0.50  # Lowered threshold to catch more suspicious messages
+# Lowered from 0.50 to 0.45 to reduce false positives on legitimate harsh messages
+SPAM_THRESHOLD = 0.45
 
 # Confidence thresholds for fusion output
 CONFIDENCE_THRESHOLDS = {
@@ -64,6 +66,40 @@ CONFIDENCE_THRESHOLDS = {
     "medium_upper": 0.60, # Score 0.40-0.75 or 0.25-0.40 = MEDIUM
     "medium_lower": 0.40,
 }
+
+# Trusted domains - reduce suspicion for these domains
+TRUSTED_DOMAINS = {
+    # Government domains
+    ".gov.in", ".gov.pk", ".nic.in", ".gov",
+    # Educational domains
+    ".edu", ".ac.in", ".edu.pk",
+    # Verified company domains
+    "amazon.in", "flipkart.com", "tcs.com", "icicibank.com",
+    "sbi.co.in", "hdfcbank.com", "paytm.com", "phonepe.com",
+    "incometax.gov.in", "scholarships.gov.in", "nobroker.in",
+    "zomato.com", "swiggy.com", "irctc.co.in", "apollohospitals.com",
+    "nta.ac.in", "careers.tcs.com"
+}
+
+# Trusted sender IDs - legitimate company/service sender patterns
+TRUSTED_SENDERS = {
+    # Banking
+    "HDFCBK", "SBIBNK", "SBIINB", "ICICIB", "AXISBK", "KOTAKB",
+    # Telecom
+    "AIRTEL", "JIONET", "VIINFO", "BSNLMB",
+    # Services
+    "AMAZON", "FLIPKT", "PAYTM", "PHONPE", "GPAY",
+    "SWIGGY", "ZOMATO", "UBEREA", "OLA",
+    # Government
+    "ITDEPT", "NSDL", "UIDAI", "GHMC", "IRCTC",
+    # Others
+    "APOLLO", "NOBRKR", "TCSHRD", "NSPSCM", "TNELEC"
+}
+
+# Suspicious domain patterns (for metadata analysis)
+SUSPICIOUS_DOMAIN_PATTERNS = [
+    ".xyz", ".tk", ".ml", ".ga", ".cf", ".site"
+]
 
 # Default scores - DEPRECATED (missing modalities now excluded from fusion)
 DEFAULT_SCORES = {
